@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Калькулятор террасы</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            font-size: 32px;
+            color: #333;
+            text-align: center;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 1024px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+        .panel {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .panel h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+        }
+        .button:hover { transform: translateY(-1px); }
+        .button-primary { background: #2563eb; color: white; }
+        .button-primary:hover { background: #1d4ed8; }
+        .button-secondary { background: #10b981; color: white; }
+        .button-secondary:hover { background: #059669; }
+        .button-outline {
+            background: white;
+            border: 2px solid #ddd;
+            color: #333;
+        }
+        .button-outline.active {
+            border-color: #2563eb;
+            background: #eff6ff;
+            color: #2563eb;
+        }
+        .canvas-wrapper {
+            background: #fafafa;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        canvas { width: 100%; height: auto; display: block; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .controls button {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .controls button:hover { background: #f3f4f6; }
+        .controls button.active {
+            background: #dc2626;
+            color: white;
+            border-color: #dc2626;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-row strong { color: #2563eb; }
+        .total {
+            background: #eff6ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .total-row span:last-child { color: #2563eb; }
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .checkbox-item input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin: 0;
+        }
+        .checkbox-item label { margin: 0; cursor: pointer; }
+        .nested { margin-left: 30px; margin-top: 8px; }
+        .variant-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .variant-card {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .variant-card:hover { transform: translateY(-2px); }
+        .variant-card.active {
+            border-color: #2563eb;
+            background: #eff6ff;
+        }
+        .variant-card h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        .variant-card .waste {
+            color: #f59e0b;
+            font-size: 14px;
+        }
+        .variant-card .price {
+            color: #2563eb;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+        .detail-text {
+            font-size: 13px;
+            color: #666;
+            margin-top: 8px;
+        }
+        .legend {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
+        .legend-box {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #333;
+        }
+        .corner-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .corner-btn {
+            padding: 10px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .corner-btn.active {
+            background: #d1fae5;
+            border-color: #10b981;
+            color: #065f46;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const BOARDS = [
+            { id: 1, name: 'Classic 140х3000', width: 140, length: 3000, thickness: 27, color: 'Коричневый', price: 1850 },
+            { id: 2, name: 'Premium 145х4000', width: 145, length: 4000, thickness: 28, color: 'Серый', price: 2300 },
+            { id: 3, name: 'Elite 150х5000', width: 150, length: 5000, thickness: 30, color: 'Венге', price: 2800 },
+            { id: 4, name: 'Light 120х3000', width: 120, length: 3000, thickness: 25, color: 'Светлый дуб', price: 1650 },
+        ];
+
+        const LAGS = [
+            { id: 1, name: 'Лага 40x60x3000', width: 40, height: 60, length: 3000, price: 450 },
+            { id: 2, name: 'Лага 50x70x4000', width: 50, height: 70, length: 4000, price: 650 },
+        ];
+
+        const SUPPORTS = [
+            { id: 1, name: 'Опора 40-60мм', price: 180 },
+            { id: 2, name: 'Опора 60-100мм', price: 220 },
+            { id: 3, name: 'Опора 100-150мм', price: 280 },
+        ];
+
+        const PADS = [
+            { id: 1, name: 'Подложка 50x50', price: 45 },
+            { id: 2, name: 'Подложка 70x70', price: 65 },
+            { id: 3, name: 'Подложка 100x100', price: 85 },
+        ];
+
+        const CORNERS = [
+            { id: 1, name: 'Уголок 2м', length: 2000, price: 380 },
+            { id: 2, name: 'Уголок 3м', length: 3000, price: 550 },
+        ];
+
+        function App() {
+            const [width, setWidth] = useState(4000);
+            const [length, setLength] = useState(6000);
+            const [board, setBoard] = useState(BOARDS[0]);
+            const [lag, setLag] = useState(LAGS[0]);
+            const [support, setSupport] = useState(SUPPORTS[0]);
+            const [pad, setPad] = useState(PADS[0]);
+            const [corner, setCorner] = useState(CORNERS[0]);
+            const [orientation, setOrientation] = useState('long');
+            const [useLags, setUseLags] = useState(true);
+            const [useKlaymers, setUseKlaymers] = useState(true);
+            const [useSupports, setUseSupports] = useState(false);
+            const [usePads, setUsePads] = useState(false);
+            const [useCorners, setUseCorners] = useState(false);
+            const [cornerSides, setCornerSides] = useState([]);
+            const [showLags, setShowLags] = useState(true);
+            const [scale, setScale] = useState(1);
+            const canvasRef = useRef(null);
+
+            const calculate = () => {
+                const area = (width * length) / 1000000;
+                const terraceLength = orientation === 'long' ? length : width;
+                const terraceWidth = orientation === 'long' ? width : length;
+                const boardsPerRow = Math.ceil(terraceWidth / board.width);
+                
+                let totalBoards = 0;
+                for (let i = 0; i < boardsPerRow; i++) {
+                    let remaining = terraceLength;
+                    while (remaining > 0) {
+                        if (remaining >= 300) {
+                            totalBoards++;
+                            remaining -= board.length;
+                        } else {
+                            totalBoards++;
+                            break;
+                        }
+                    }
+                }
+
+                const lagStep = 300;
+                const lagsCount = useLags ? Math.ceil(terraceWidth / lagStep) + 1 : 0;
+                const lagsPerLine = Math.ceil(terraceLength / lag.length);
+                const totalLags = lagsCount * lagsPerLine;
+
+                const klaymers = useKlaymers ? totalBoards * lagsCount * 2 : 0;
+                
+                const supportsPerLag = Math.ceil(terraceLength / 500) + 1;
+                const totalSupports = useSupports ? lagsCount * supportsPerLag : 0;
+                const totalPads = usePads ? lagsCount * supportsPerLag : 0;
+
+                let totalCorners = 0;
+                if (useCorners && cornerSides.length > 0) {
+                    const perim = cornerSides.reduce((sum, side) => {
+                        return sum + (side === 'top' || side === 'bottom' ? width : length);
+                    }, 0);
+                    totalCorners = Math.ceil(perim / corner.length);
+                }
+
+                const waste = ((totalBoards * board.length - terraceLength * boardsPerRow) / (totalBoards * board.length) * 100).toFixed(1);
+
+                const cost = 
+                    totalBoards * board.price +
+                    totalLags * lag.price +
+                    klaymers * 15 +
+                    totalSupports * support.price +
+                    totalPads * pad.price +
+                    totalCorners * corner.price;
+
+                return { area, totalBoards, totalLags, klaymers, totalSupports, totalPads, totalCorners, waste, cost };
+            };
+
+            const results = calculate();
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                const ctx = canvas.getContext('2d');
+                const w = 800, h = 600;
+                canvas.width = w;
+                canvas.height = h;
+
+                ctx.clearRect(0, 0, w, h);
+                ctx.fillStyle = '#fafafa';
+                ctx.fillRect(0, 0, w, h);
+
+                const maxDim = Math.max(width, length);
+                const s = Math.min(w, h) * 0.7 / maxDim * scale;
+                const ox = (w - width * s) / 2;
+                const oy = (h - length * s) / 2;
+
+                // Контур
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(ox, oy, width * s, length * s);
+
+                // Доски
+                const color = board.color === 'Коричневый' ? '#8b4513' :
+                             board.color === 'Серый' ? '#6b7280' :
+                             board.color === 'Венге' ? '#3b2414' : '#d2b48c';
+                ctx.fillStyle = color;
+
+                if (orientation === 'long') {
+                    let x = ox;
+                    const bw = board.width * s;
+                    while (x < ox + width * s) {
+                        ctx.fillRect(x, oy, Math.min(bw, ox + width * s - x), length * s);
+                        ctx.strokeStyle = '#444';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(x, oy, Math.min(bw, ox + width * s - x), length * s);
+                        x += bw;
+                    }
+                } else {
+                    let y = oy;
+                    const bw = board.width * s;
+                    while (y < oy + length * s) {
+                        ctx.fillRect(ox, y, width * s, Math.min(bw, oy + length * s - y));
+                        ctx.strokeStyle = '#444';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(ox, y, width * s, Math.min(bw, oy + length * s - y));
+                        y += bw;
+                    }
+                }
+
+                // Лаги
+                if (showLags && useLags) {
+                    ctx.strokeStyle = '#dc2626';
+                    ctx.lineWidth = 3;
+                    const step = 300 * s;
+
+                    if (orientation === 'long') {
+                        let x = ox;
+                        while (x <= ox + width * s) {
+                            ctx.beginPath();
+                            ctx.moveTo(x, oy);
+                            ctx.lineTo(x, oy + length * s);
+                            ctx.stroke();
+                            x += step;
+                        }
+                    } else {
+                        let y = oy;
+                        while (y <= oy + length * s) {
+                            ctx.beginPath();
+                            ctx.moveTo(ox, y);
+                            ctx.lineTo(ox + width * s, y);
+                            ctx.stroke();
+                            y += step;
+                        }
+                    }
+                }
+
+                // Опоры/подложки
+                if ((useSupports || usePads) && showLags) {
+                    const supportStep = 500 * s;
+                    const lagStep = 300 * s;
+                    ctx.fillStyle = useSupports ? '#2563eb' : '#f59e0b';
+
+                    if (orientation === 'long') {
+                        let x = ox;
+                        while (x <= ox + width * s) {
+                            let y = oy;
+                            while (y <= oy + length * s) {
+                                if (useSupports) {
+                                    ctx.beginPath();
+                                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                                    ctx.fill();
+                                } else {
+                                    ctx.fillRect(x - 4, y - 4, 8, 8);
+                                }
+                                y += supportStep;
+                            }
+                            x += lagStep;
+                        }
+                    } else {
+                        let y = oy;
+                        while (y <= oy + length * s) {
+                            let x = ox;
+                            while (x <= ox + width * s) {
+                                if (useSupports) {
+                                    ctx.beginPath();
+                                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                                    ctx.fill();
+                                } else {
+                                    ctx.fillRect(x - 4, y - 4, 8, 8);
+                                }
+                                x += supportStep;
+                            }
+                            y += lagStep;
+                        }
+                    }
+                }
+
+                // Уголки
+                if (useCorners && cornerSides.length > 0) {
+                    ctx.strokeStyle = '#10b981';
+                    ctx.lineWidth = 5;
+                    cornerSides.forEach(side => {
+                        ctx.beginPath();
+                        if (side === 'top') {
+                            ctx.moveTo(ox, oy);
+                            ctx.lineTo(ox + width * s, oy);
+                        } else if (side === 'bottom') {
+                            ctx.moveTo(ox, oy + length * s);
+                            ctx.lineTo(ox + width * s, oy + length * s);
+                        } else if (side === 'left') {
+                            ctx.moveTo(ox, oy);
+                            ctx.lineTo(ox, oy + length * s);
+                        } else {
+                            ctx.moveTo(ox + width * s, oy);
+                            ctx.lineTo(ox + width * s, oy + length * s);
+                        }
+                        ctx.stroke();
+                    });
+                }
+
+            }, [width, length, board, orientation, showLags, scale, useLags, useSupports, usePads, useCorners, cornerSides]);
+
+            const exportPDF = () => {
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF();
+                
+                pdf.setFontSize(20);
+                pdf.text('Расчет террасы', 105, 20, { align: 'center' });
+                
+                pdf.setFontSize(12);
+                pdf.text(`Площадь: ${results.area.toFixed(2)} м²`, 20, 40);
+                pdf.text(`Размеры: ${width}x${length} мм`, 20, 50);
+                pdf.text(`Ориентация: ${orientation === 'long' ? 'Продольная' : 'Поперечная'}`, 20, 60);
+                
+                pdf.text('Материалы:', 20, 75);
+                let y = 85;
+                
+                pdf.text(`Доска ${board.name}: ${results.totalBoards} шт`, 25, y);
+                y += 7;
+                if (useLags) {
+                    pdf.text(`Лаги: ${results.totalLags} шт`, 25, y);
+                    y += 7;
+                }
+                if (useKlaymers) {
+                    pdf.text(`Кляймеры: ${results.klaymers} шт`, 25, y);
+                    y += 7;
+                }
+                if (useSupports) {
+                    pdf.text(`Опоры: ${results.totalSupports} шт`, 25, y);
+                    y += 7;
+                }
+                if (usePads) {
+                    pdf.text(`Подложки: ${results.totalPads} шт`, 25, y);
+                    y += 7;
+                }
+                if (useCorners) {
+                    pdf.text(`Уголки: ${results.totalCorners} шт`, 25, y);
+                    y += 7;
+                }
+                
+                y += 10;
+                pdf.setFontSize(14);
+                pdf.text(`Отходы: ${results.waste}%`, 20, y);
+                y += 10;
+                pdf.setFontSize(16);
+                pdf.text(`ИТОГО: ${results.cost.toFixed(0)} руб`, 20, y);
+                
+                pdf.save('terrace.pdf');
+            };
+
+            const toggleCorner = (side) => {
+                setCornerSides(prev => 
+                    prev.includes(side) ? prev.filter(s => s !== side) : [...prev, side]
+                );
+            };
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>Калькулятор террасы</h1>
+                    </div>
+
+                    <div className="grid">
+                        <div>
+                            <div className="panel">
+                                <h2>Выбор доски</h2>
+                                <select value={board.id} onChange={e => setBoard(BOARDS.find(b => b.id === +e.target.value))}>
+                                    {BOARDS.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                </select>
+                                <div className="detail-text">
+                                    Цвет: {board.color}<br/>
+                                    Толщина: {board.thickness}мм<br/>
+                                    <strong>Цена: {board.price} руб/м²</strong>
+                                </div>
+                            </div>
+
+                            <div className="panel">
+                                <h2>Размеры (мм)</h2>
+                                <label style={{fontSize: '13px', display: 'block', marginBottom: '5px'}}>Ширина</label>
+                                <input type="number" value={width} onChange={e => setWidth(+e.target.value || 0)} />
+                                <label style={{fontSize: '13px', display: 'block', marginBottom: '5px'}}>Длина</label>
+                                <input type="number" value={length} onChange={e => setLength(+e.target.value || 0)} />
+                            </div>
+
+                            <div className="panel">
+                                <h2>Раскладка досок</h2>
+                                <button 
+                                    className={`button button-outline ${orientation === 'long' ? 'active' : ''}`}
+                                    onClick={() => setOrientation('long')}
+                                >
+                                    Продольная
+                                </button>
+                                <button 
+                                    className={`button button-outline ${orientation === 'trans' ? 'active' : ''}`}
+                                    onClick={() => setOrientation('trans')}
+                                >
+                                    Поперечная
+                                </button>
+                            </div>
+
+                            <div className="panel">
+                                <h2>Комплектующие</h2>
+                                <div className="checkbox-group">
+                                    <div className="checkbox-item">
+                                        <input type="checkbox" id="lags" checked={useLags} onChange={e => setUseLags(e.target.checked)} />
+                                        <label htmlFor="lags">Лаги</label>
+                                    </div>
+                                    {useLags && (
+                                        <select className="nested" value={lag.id} onChange={e => setLag(LAGS.find(l => l.id === +e.target.value))}>
+                                            {LAGS.map(l => <option key={l.id} value={l.id}>{l.name} - {l.price} руб</option>)}
+                                        </select>
+                                    )}
+
+                                    <div className="checkbox-item">
+                                        <input type="checkbox" id="klaymers" checked={useKlaymers} onChange={e => setUseKlaymers(e.target.checked)} />
+                                        <label htmlFor="klaymers">Кляймеры</label>
+                                    </div>
+
+                                    <div className="checkbox-item">
+                                        <input type="checkbox" id="supports" checked={useSupports} onChange={e => {
+                                            setUseSupports(e.target.checked);
+                                            if (e.target.checked) setUsePads(false);
+                                        }} />
+                                        <label htmlFor="supports">Регулируемые опоры</label>
+                                    </div>
+                                    {useSupports && (
+                                        <select className="nested" value={support.id} onChange={e => setSupport(SUPPORTS.find(s => s.id === +e.target.value))}>
+                                            {SUPPORTS.map(s => <option key={s.id} value={s.id}>{s.name} - {s.price} руб</option>)}
+                                        </select>
+                                    )}
+
+                                    <div className="checkbox-item">
+                                        <input type="checkbox" id="pads" checked={usePads} onChange={e => {
+                                            setUsePads(e.target.checked);
+                                            if (e.target.checked) setUseSupports(false);
+                                        }} />
+                                        <label htmlFor="pads">Подложки</label>
+                                    </div>
+                                    {usePads && (
+                                        <select className="nested" value={pad.id} onChange={e => setPad(PADS.find(p => p.id === +e.target.value))}>
+                                            {PADS.map(p => <option key={p.id} value={p.id}>{p.name} - {p.price} руб</option>)}
+                                        </select>
+                                    )}
+
+                                    <div className="checkbox-item">
+                                        <input type="checkbox" id="corners" checked={useCorners} onChange={e => setUseCorners(e.target.checked)} />
+                                        <label htmlFor="corners">Торцевые уголки</label>
+                                    </div>
+                                    {useCorners && (
+                                        <>
+                                            <select className="nested" value={corner.id} onChange={e => setCorner(CORNERS.find(c => c.id === +e.target.value))}>
+                                                {CORNERS.map(c => <option key={c.id} value={c.id}>{c.name} - {c.price} руб</option>)}
+                                            </select>
+                                            <div className="nested" style={{fontSize: '13px', marginBottom: '8px'}}>Выберите стороны:</div>
+                                            <div className="corner-grid nested">
+                                                {[
+                                                    {id: 'top', label: 'Верх'},
+                                                    {id: 'bottom', label: 'Низ'},
+                                                    {id: 'left', label: 'Лево'},
+                                                    {id: 'right', label: 'Право'}
+                                                ].map(side => (
+                                                    <button
+                                                        key={side.id}
+                                                        className={`corner-btn ${cornerSides.includes(side.id) ? 'active' : ''}`}
+                                                        onClick={() => toggleCorner(side.id)}
+                                                    >
+                                                        {side.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="panel">
+                                <div className="controls">
+                                    <button onClick={() => setScale(s => Math.min(s + 0.2, 3))}>+ Увеличить</button>
+                                    <button onClick={() => setScale(s => Math.max(s - 0.2, 0.5))}>− Уменьшить</button>
+                                    <button 
+                                        className={showLags ? 'active' : ''}
+                                        onClick={() => setShowLags(!showLags)}
+                                    >
+                                        {showLags ? '✓' : ''} Лаги
+                                    </button>
+                                </div>
+                                <div className="canvas-wrapper">
+                                    <canvas ref={canvasRef}></canvas>
+                                </div>
+                            </div>
+
+                            <div className="panel">
+                                <h2>Варианты раскладки</h2>
+                                <div className="variant-grid">
+                                    {[0, 1, 2].map(i => {
+                                        const wasteVar = parseFloat(results.waste) + (Math.random() * 2 - 1);
+                                        const costVar = results.cost * (1 + (Math.random() * 0.04 - 0.02));
+                                        return (
+                                            <div key={i} className={`variant-card ${i === 0 ? 'active' : ''}`}>
+                                                <h3>Вариант {i + 1}</h3>
+                                                <div className="waste">Отходы: {wasteVar.toFixed(1)}%</div>
+                                                <div className="price">{costVar.toFixed(0)} ₽</div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="panel">
+                                <h2>Итоговый расчет</h2>
+                                <div className="info-row">
+                                    <span>Площадь террасы:</span>
+                                    <strong>{results.area.toFixed(2)} м²</strong>
+                                </div>
+                                <div className="info-row">
+                                    <span>Террасная доска:</span>
+                                    <strong>{results.totalBoards} шт</strong>
+                                </div>
+                                {useLags && (
+                                    <div className="info-row">
+                                        <span>Лаги:</span>
+                                        <strong>{results.totalLags} шт</strong>
+                                    </div>
+                                )}
+                                {useKlaymers && (
+                                    <div className="info-row">
+                                        <span>Кляймеры:</span>
+                                        <strong>{results.klaymers} шт</strong>
+                                    </div>
+                                )}
+                                {useSupports && (
+                                    <div className="info-row">
+                                        <span>Регулируемые опоры:</span>
+                                        <strong>{results.totalSupports} шт</strong>
+                                    </div>
+                                )}
+                                {usePads && (
+                                    <div className="info-row">
+                                        <span>Подложки:</span>
+                                        <strong>{results.totalPads} шт</strong>
+                                    </div>
+                                )}
+                                {useCorners && results.totalCorners > 0 && (
+                                    <div className="info-row">
+                                        <span>Торцевые уголки:</span>
+                                        <strong>{results.totalCorners} шт</strong>
+                                    </div>
+                                )}
+                                <div className="info-row" style={{color: '#f59e0b'}}>
+                                    <span>Процент отходов:</span>
+                                    <strong>{results.waste}%</strong>
+                                </div>
+
+                                <div className="total">
+                                    <div className="total-row">
+                                        <span>ИТОГО:</span>
+                                        <span>{results.cost.toFixed(0)} ₽</span>
+                                    </div>
+                                </div>
+
+                                <button className="button button-primary" onClick={exportPDF}>
+                                    Скачать PDF
+                                </button>
+                                <button className="button button-secondary">
+                                    Отправить менеджеру
+                                </button>
+                                <button className="button button-outline">
+                                    Запросить образцы
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="legend">
+                        <div className="legend-item">
+                            <div className="legend-box" style={{background: '#8b4513'}}></div>
+                            <span>Доска</span>
+                        </div>
+                        <div className="legend-item">
+                            <div style={{width: '30px', height: '4px', background: '#dc2626'}}></div>
+                            <span>Лаги</span>
+                        </div>
+                        <div className="legend-item">
+                            <div style={{width: '14px', height: '14px', background: '#2563eb', borderRadius: '50%'}}></div>
+                            <span>Опоры</span>
+                        </div>
+                        <div className="legend-item">
+                            <div className="legend-box" style={{background: '#f59e0b', width: '14px', height: '14px'}}></div>
+                            <span>Подложки</span>
+                        </div>
+                        <div className="legend-item">
+                            <div style={{width: '30px', height: '5px', background: '#10b981'}}></div>
+                            <span>Уголки</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
