@@ -82,11 +82,19 @@
             background: #eff6ff;
             color: #2563eb;
         }
+        .button-small {
+            padding: 8px 12px;
+            font-size: 13px;
+            width: auto;
+            display: inline-block;
+            margin-right: 8px;
+        }
         .canvas-wrapper {
             background: #fafafa;
             border: 2px solid #e5e7eb;
             border-radius: 8px;
             overflow: hidden;
+            cursor: crosshair;
         }
         canvas { width: 100%; height: auto; display: block; }
         .controls {
@@ -223,6 +231,47 @@
             border-color: #10b981;
             color: #065f46;
         }
+        .points-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 10px;
+        }
+        .point-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        .point-item:last-child { border-bottom: none; }
+        .point-item button {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .point-inputs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .point-inputs input {
+            flex: 1;
+            margin: 0;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 8px;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
@@ -261,8 +310,12 @@
         ];
 
         function App() {
+            const [shapeType, setShapeType] = useState('rectangle');
             const [width, setWidth] = useState(4000);
             const [length, setLength] = useState(6000);
+            const [customPoints, setCustomPoints] = useState([]);
+            const [newPointX, setNewPointX] = useState('');
+            const [newPointY, setNewPointY] = useState('');
             const [board, setBoard] = useState(BOARDS[0]);
             const [lag, setLag] = useState(LAGS[0]);
             const [support, setSupport] = useState(SUPPORTS[0]);
@@ -279,56 +332,133 @@
             const [scale, setScale] = useState(1);
             const canvasRef = useRef(null);
 
+            // Расчет площади по формуле Гаусса для произвольного многоугольника
+            const calculatePolygonArea = (points) => {
+                if (points.length < 3) return 0;
+                let area = 0;
+                for (let i = 0; i < points.length; i++) {
+                    const j = (i + 1) % points.length;
+                    area += points[i].x * points[j].y;
+                    area -= points[j].x * points[i].y;
+                }
+                return Math.abs(area / 2) / 1000000; // в м²
+            };
+
+            // Получение границ для произвольной формы
+            const getPolygonBounds = (points) => {
+                if (points.length === 0) return { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 };
+                const xs = points.map(p => p.x);
+                const ys = points.map(p => p.y);
+                const minX = Math.min(...xs);
+                const maxX = Math.max(...xs);
+                const minY = Math.min(...ys);
+                const maxY = Math.max(...ys);
+                return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+            };
+
             const calculate = () => {
-                const area = (width * length) / 1000000;
-                const terraceLength = orientation === 'long' ? length : width;
-                const terraceWidth = orientation === 'long' ? width : length;
+                let area, terraceWidth, terraceLength;
+
+                if (shapeType === 'custom' && customPoints.length >= 3) {
+                    area = calculatePolygonArea(customPoints);
+                    const bounds = getPolygonBounds(customPoints);
+                    terraceWidth = orientation === 'long' ? bounds.width : bounds.height;
+                    terraceLength = orientation === 'long' ? bounds.height : bounds.width;
+                } else {
+                    area = (width * length) / 1000000;
+                    terraceLength = orientation === 'long' ? length : width;
+                    terraceWidth = orientation === 'long' ? width : length;
+                }
+
+                // Расчет досок
                 const boardsPerRow = Math.ceil(terraceWidth / board.width);
-                
                 let totalBoards = 0;
+                let totalBoardLength = 0;
+                
                 for (let i = 0; i < boardsPerRow; i++) {
                     let remaining = terraceLength;
+                    let boardsInThisRow = 0;
+                    
                     while (remaining > 0) {
-                        if (remaining >= 300) {
+                        if (remaining >= 300) { // минимальный остаток 300мм
                             totalBoards++;
+                            boardsInThisRow++;
+                            totalBoardLength += Math.min(board.length, remaining);
                             remaining -= board.length;
+                            if (boardsInThisRow > 1) {
+                                remaining += 7; // добавляем зазор обратно для расчета
+                            }
                         } else {
+                            // Остаток меньше 300мм - берем целую доску
                             totalBoards++;
+                            totalBoardLength += board.length;
                             break;
                         }
                     }
                 }
 
-                const lagStep = 300;
+                // Расчет лаг
+                const lagStep = 300; // шаг между лагами
                 const lagsCount = useLags ? Math.ceil(terraceWidth / lagStep) + 1 : 0;
                 const lagsPerLine = Math.ceil(terraceLength / lag.length);
                 const totalLags = lagsCount * lagsPerLine;
 
-                const klaymers = useKlaymers ? totalBoards * lagsCount * 2 : 0;
+                // ИСПРАВЛЕННЫЙ расчет кляймеров:
+                // Каждая доска крепится к каждой лаге одним кляймером
+                const klaymers = useKlaymers ? totalBoards * lagsCount : 0;
                 
+                // Расчет опор/подложек
                 const supportsPerLag = Math.ceil(terraceLength / 500) + 1;
                 const totalSupports = useSupports ? lagsCount * supportsPerLag : 0;
                 const totalPads = usePads ? lagsCount * supportsPerLag : 0;
 
+                // Расчет уголков
                 let totalCorners = 0;
                 if (useCorners && cornerSides.length > 0) {
-                    const perim = cornerSides.reduce((sum, side) => {
-                        return sum + (side === 'top' || side === 'bottom' ? width : length);
-                    }, 0);
-                    totalCorners = Math.ceil(perim / corner.length);
+                    if (shapeType === 'custom' && customPoints.length >= 3) {
+                        // Для произвольной формы считаем периметр
+                        let perimeter = 0;
+                        for (let i = 0; i < customPoints.length; i++) {
+                            const j = (i + 1) % customPoints.length;
+                            const dx = customPoints[j].x - customPoints[i].x;
+                            const dy = customPoints[j].y - customPoints[i].y;
+                            perimeter += Math.sqrt(dx * dx + dy * dy);
+                        }
+                        totalCorners = Math.ceil(perimeter / corner.length);
+                    } else {
+                        const perim = cornerSides.reduce((sum, side) => {
+                            return sum + (side === 'top' || side === 'bottom' ? width : length);
+                        }, 0);
+                        totalCorners = Math.ceil(perim / corner.length);
+                    }
                 }
 
-                const waste = ((totalBoards * board.length - terraceLength * boardsPerRow) / (totalBoards * board.length) * 100).toFixed(1);
+                // Расчет отходов
+                const theoreticalBoardLength = terraceLength * boardsPerRow;
+                const actualBoardLength = totalBoardLength;
+                const waste = ((actualBoardLength - theoreticalBoardLength) / actualBoardLength * 100).toFixed(1);
 
                 const cost = 
                     totalBoards * board.price +
                     totalLags * lag.price +
-                    klaymers * 15 +
+                    klaymers * 15 + // цена одного кляймера
                     totalSupports * support.price +
                     totalPads * pad.price +
                     totalCorners * corner.price;
 
-                return { area, totalBoards, totalLags, klaymers, totalSupports, totalPads, totalCorners, waste, cost };
+                return { 
+                    area: area.toFixed(2), 
+                    totalBoards, 
+                    totalLags, 
+                    klaymers, 
+                    totalSupports, 
+                    totalPads, 
+                    totalCorners, 
+                    waste, 
+                    cost,
+                    boardsPerRow,
+                    lagsCount
+                };
             };
 
             const results = calculate();
@@ -346,136 +476,237 @@
                 ctx.fillStyle = '#fafafa';
                 ctx.fillRect(0, 0, w, h);
 
-                const maxDim = Math.max(width, length);
-                const s = Math.min(w, h) * 0.7 / maxDim * scale;
-                const ox = (w - width * s) / 2;
-                const oy = (h - length * s) / 2;
+                let drawWidth, drawHeight, ox, oy, s;
 
-                // Контур
-                ctx.strokeStyle = '#333';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(ox, oy, width * s, length * s);
+                if (shapeType === 'custom' && customPoints.length >= 3) {
+                    // Рисуем произвольную форму
+                    const bounds = getPolygonBounds(customPoints);
+                    const maxDim = Math.max(bounds.width, bounds.height);
+                    s = Math.min(w, h) * 0.7 / maxDim * scale;
+                    
+                    const centerX = (bounds.minX + bounds.maxX) / 2;
+                    const centerY = (bounds.minY + bounds.maxY) / 2;
+                    ox = w / 2 - centerX * s;
+                    oy = h / 2 - centerY * s;
 
-                // Доски
-                const color = board.color === 'Коричневый' ? '#8b4513' :
-                             board.color === 'Серый' ? '#6b7280' :
-                             board.color === 'Венге' ? '#3b2414' : '#d2b48c';
-                ctx.fillStyle = color;
-
-                if (orientation === 'long') {
-                    let x = ox;
-                    const bw = board.width * s;
-                    while (x < ox + width * s) {
-                        ctx.fillRect(x, oy, Math.min(bw, ox + width * s - x), length * s);
-                        ctx.strokeStyle = '#444';
-                        ctx.lineWidth = 1;
-                        ctx.strokeRect(x, oy, Math.min(bw, ox + width * s - x), length * s);
-                        x += bw;
+                    // Контур
+                    ctx.strokeStyle = '#333';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(customPoints[0].x * s + ox, customPoints[0].y * s + oy);
+                    for (let i = 1; i < customPoints.length; i++) {
+                        ctx.lineTo(customPoints[i].x * s + ox, customPoints[i].y * s + oy);
                     }
-                } else {
-                    let y = oy;
-                    const bw = board.width * s;
-                    while (y < oy + length * s) {
-                        ctx.fillRect(ox, y, width * s, Math.min(bw, oy + length * s - y));
-                        ctx.strokeStyle = '#444';
-                        ctx.lineWidth = 1;
-                        ctx.strokeRect(ox, y, width * s, Math.min(bw, oy + length * s - y));
-                        y += bw;
-                    }
-                }
+                    ctx.closePath();
+                    ctx.stroke();
 
-                // Лаги
-                if (showLags && useLags) {
-                    ctx.strokeStyle = '#dc2626';
-                    ctx.lineWidth = 3;
-                    const step = 300 * s;
+                    // Заливка формы
+                    const color = board.color === 'Коричневый' ? '#8b4513' :
+                                 board.color === 'Серый' ? '#6b7280' :
+                                 board.color === 'Венге' ? '#3b2414' : '#d2b48c';
+                    ctx.fillStyle = color + '40';
+                    ctx.fill();
 
+                    // Рисуем доски (упрощенно)
+                    ctx.strokeStyle = '#444';
+                    ctx.lineWidth = 1;
+                    
                     if (orientation === 'long') {
-                        let x = ox;
-                        while (x <= ox + width * s) {
+                        const bw = board.width * s;
+                        let currentPos = bounds.minX * s + ox;
+                        while (currentPos < bounds.maxX * s + ox) {
                             ctx.beginPath();
-                            ctx.moveTo(x, oy);
-                            ctx.lineTo(x, oy + length * s);
+                            ctx.moveTo(currentPos, bounds.minY * s + oy);
+                            ctx.lineTo(currentPos, bounds.maxY * s + oy);
                             ctx.stroke();
-                            x += step;
+                            currentPos += bw;
                         }
                     } else {
-                        let y = oy;
-                        while (y <= oy + length * s) {
+                        const bw = board.width * s;
+                        let currentPos = bounds.minY * s + oy;
+                        while (currentPos < bounds.maxY * s + oy) {
                             ctx.beginPath();
-                            ctx.moveTo(ox, y);
-                            ctx.lineTo(ox + width * s, y);
+                            ctx.moveTo(bounds.minX * s + ox, currentPos);
+                            ctx.lineTo(bounds.maxX * s + ox, currentPos);
                             ctx.stroke();
-                            y += step;
+                            currentPos += bw;
                         }
                     }
-                }
 
-                // Опоры/подложки
-                if ((useSupports || usePads) && showLags) {
-                    const supportStep = 500 * s;
-                    const lagStep = 300 * s;
-                    ctx.fillStyle = useSupports ? '#2563eb' : '#f59e0b';
+                    // Лаги
+                    if (showLags && useLags) {
+                        ctx.strokeStyle = '#dc2626';
+                        ctx.lineWidth = 3;
+                        const step = 300 * s;
 
-                    if (orientation === 'long') {
-                        let x = ox;
-                        while (x <= ox + width * s) {
-                            let y = oy;
-                            while (y <= oy + length * s) {
-                                if (useSupports) {
-                                    ctx.beginPath();
-                                    ctx.arc(x, y, 5, 0, Math.PI * 2);
-                                    ctx.fill();
-                                } else {
-                                    ctx.fillRect(x - 4, y - 4, 8, 8);
-                                }
-                                y += supportStep;
+                        if (orientation === 'long') {
+                            let currentPos = bounds.minX * s + ox;
+                            while (currentPos <= bounds.maxX * s + ox) {
+                                ctx.beginPath();
+                                ctx.moveTo(currentPos, bounds.minY * s + oy);
+                                ctx.lineTo(currentPos, bounds.maxY * s + oy);
+                                ctx.stroke();
+                                currentPos += step;
                             }
-                            x += lagStep;
+                        } else {
+                            let currentPos = bounds.minY * s + oy;
+                            while (currentPos <= bounds.maxY * s + oy) {
+                                ctx.beginPath();
+                                ctx.moveTo(bounds.minX * s + ox, currentPos);
+                                ctx.lineTo(bounds.maxX * s + ox, currentPos);
+                                ctx.stroke();
+                                currentPos += step;
+                            }
+                        }
+                    }
+
+                    // Точки многоугольника
+                    ctx.fillStyle = '#2563eb';
+                    customPoints.forEach((point, idx) => {
+                        ctx.beginPath();
+                        ctx.arc(point.x * s + ox, point.y * s + oy, 6, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Номер точки
+                        ctx.fillStyle = '#333';
+                        ctx.font = '12px Arial';
+                        ctx.fillText(idx + 1, point.x * s + ox + 10, point.y * s + oy - 10);
+                        ctx.fillStyle = '#2563eb';
+                    });
+
+                } else {
+                    // Прямоугольная форма
+                    const maxDim = Math.max(width, length);
+                    s = Math.min(w, h) * 0.7 / maxDim * scale;
+                    ox = (w - width * s) / 2;
+                    oy = (h - length * s) / 2;
+
+                    // Контур
+                    ctx.strokeStyle = '#333';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(ox, oy, width * s, length * s);
+
+                    // Доски
+                    const color = board.color === 'Коричневый' ? '#8b4513' :
+                                 board.color === 'Серый' ? '#6b7280' :
+                                 board.color === 'Венге' ? '#3b2414' : '#d2b48c';
+                    ctx.fillStyle = color;
+
+                    if (orientation === 'long') {
+                        let x = ox;
+                        const bw = board.width * s;
+                        while (x < ox + width * s) {
+                            ctx.fillRect(x, oy, Math.min(bw, ox + width * s - x), length * s);
+                            ctx.strokeStyle = '#444';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(x, oy, Math.min(bw, ox + width * s - x), length * s);
+                            x += bw;
                         }
                     } else {
                         let y = oy;
-                        while (y <= oy + length * s) {
+                        const bw = board.width * s;
+                        while (y < oy + length * s) {
+                            ctx.fillRect(ox, y, width * s, Math.min(bw, oy + length * s - y));
+                            ctx.strokeStyle = '#444';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(ox, y, width * s, Math.min(bw, oy + length * s - y));
+                            y += bw;
+                        }
+                    }
+
+                    // Лаги
+                    if (showLags && useLags) {
+                        ctx.strokeStyle = '#dc2626';
+                        ctx.lineWidth = 3;
+                        const step = 300 * s;
+
+                        if (orientation === 'long') {
                             let x = ox;
                             while (x <= ox + width * s) {
-                                if (useSupports) {
-                                    ctx.beginPath();
-                                    ctx.arc(x, y, 5, 0, Math.PI * 2);
-                                    ctx.fill();
-                                } else {
-                                    ctx.fillRect(x - 4, y - 4, 8, 8);
-                                }
-                                x += supportStep;
+                                ctx.beginPath();
+                                ctx.moveTo(x, oy);
+                                ctx.lineTo(x, oy + length * s);
+                                ctx.stroke();
+                                x += step;
                             }
-                            y += lagStep;
+                        } else {
+                            let y = oy;
+                            while (y <= oy + length * s) {
+                                ctx.beginPath();
+                                ctx.moveTo(ox, y);
+                                ctx.lineTo(ox + width * s, y);
+                                ctx.stroke();
+                                y += step;
+                            }
                         }
+                    }
+
+                    // Опоры/подложки
+                    if ((useSupports || usePads) && showLags) {
+                        const supportStep = 500 * s;
+                        const lagStep = 300 * s;
+                        ctx.fillStyle = useSupports ? '#2563eb' : '#f59e0b';
+
+                        if (orientation === 'long') {
+                            let x = ox;
+                            while (x <= ox + width * s) {
+                                let y = oy;
+                                while (y <= oy + length * s) {
+                                    if (useSupports) {
+                                        ctx.beginPath();
+                                        ctx.arc(x, y, 5, 0, Math.PI * 2);
+                                        ctx.fill();
+                                    } else {
+                                        ctx.fillRect(x - 4, y - 4, 8, 8);
+                                    }
+                                    y += supportStep;
+                                }
+                                x += lagStep;
+                            }
+                        } else {
+                            let y = oy;
+                            while (y <= oy + length * s) {
+                                let x = ox;
+                                while (x <= ox + width * s) {
+                                    if (useSupports) {
+                                        ctx.beginPath();
+                                        ctx.arc(x, y, 5, 0, Math.PI * 2);
+                                        ctx.fill();
+                                    } else {
+                                        ctx.fillRect(x - 4, y - 4, 8, 8);
+                                    }
+                                    x += supportStep;
+                                }
+                                y += lagStep;
+                            }
+                        }
+                    }
+
+                    // Уголки
+                    if (useCorners && cornerSides.length > 0) {
+                        ctx.strokeStyle = '#10b981';
+                        ctx.lineWidth = 5;
+                        cornerSides.forEach(side => {
+                            ctx.beginPath();
+                            if (side === 'top') {
+                                ctx.moveTo(ox, oy);
+                                ctx.lineTo(ox + width * s, oy);
+                            } else if (side === 'bottom') {
+                                ctx.moveTo(ox, oy + length * s);
+                                ctx.lineTo(ox + width * s, oy + length * s);
+                            } else if (side === 'left') {
+                                ctx.moveTo(ox, oy);
+                                ctx.lineTo(ox, oy + length * s);
+                            } else {
+                                ctx.moveTo(ox + width * s, oy);
+                                ctx.lineTo(ox + width * s, oy + length * s);
+                            }
+                            ctx.stroke();
+                        });
                     }
                 }
 
-                // Уголки
-                if (useCorners && cornerSides.length > 0) {
-                    ctx.strokeStyle = '#10b981';
-                    ctx.lineWidth = 5;
-                    cornerSides.forEach(side => {
-                        ctx.beginPath();
-                        if (side === 'top') {
-                            ctx.moveTo(ox, oy);
-                            ctx.lineTo(ox + width * s, oy);
-                        } else if (side === 'bottom') {
-                            ctx.moveTo(ox, oy + length * s);
-                            ctx.lineTo(ox + width * s, oy + length * s);
-                        } else if (side === 'left') {
-                            ctx.moveTo(ox, oy);
-                            ctx.lineTo(ox, oy + length * s);
-                        } else {
-                            ctx.moveTo(ox + width * s, oy);
-                            ctx.lineTo(ox + width * s, oy + length * s);
-                        }
-                        ctx.stroke();
-                    });
-                }
-
-            }, [width, length, board, orientation, showLags, scale, useLags, useSupports, usePads, useCorners, cornerSides]);
+            }, [width, length, board, orientation, showLags, scale, useLags, useSupports, usePads, useCorners, cornerSides, shapeType, customPoints]);
 
             const exportPDF = () => {
                 const { jsPDF } = window.jspdf;
@@ -485,12 +716,15 @@
                 pdf.text('Расчет террасы', 105, 20, { align: 'center' });
                 
                 pdf.setFontSize(12);
-                pdf.text(`Площадь: ${results.area.toFixed(2)} м²`, 20, 40);
-                pdf.text(`Размеры: ${width}x${length} мм`, 20, 50);
-                pdf.text(`Ориентация: ${orientation === 'long' ? 'Продольная' : 'Поперечная'}`, 20, 60);
+                pdf.text(`Площадь: ${results.area} м²`, 20, 40);
+                pdf.text(`Форма: ${shapeType === 'rectangle' ? 'Прямоугольная' : 'Произвольная'}`, 20, 50);
+                if (shapeType === 'rectangle') {
+                    pdf.text(`Размеры: ${width}x${length} мм`, 20, 60);
+                }
+                pdf.text(`Ориентация: ${orientation === 'long' ? 'Продольная' : 'Поперечная'}`, 20, 70);
                 
-                pdf.text('Материалы:', 20, 75);
-                let y = 85;
+                pdf.text('Материалы:', 20, 85);
+                let y = 95;
                 
                 pdf.text(`Доска ${board.name}: ${results.totalBoards} шт`, 25, y);
                 y += 7;
@@ -531,6 +765,24 @@
                 );
             };
 
+            const addPoint = () => {
+                const x = parseFloat(newPointX);
+                const y = parseFloat(newPointY);
+                if (!isNaN(x) && !isNaN(y)) {
+                    setCustomPoints([...customPoints, { x, y }]);
+                    setNewPointX('');
+                    setNewPointY('');
+                }
+            };
+
+            const removePoint = (index) => {
+                setCustomPoints(customPoints.filter((_, i) => i !== index));
+            };
+
+            const clearPoints = () => {
+                setCustomPoints([]);
+            };
+
             return (
                 <div className="container">
                     <div className="header">
@@ -552,12 +804,68 @@
                             </div>
 
                             <div className="panel">
-                                <h2>Размеры (мм)</h2>
-                                <label style={{fontSize: '13px', display: 'block', marginBottom: '5px'}}>Ширина</label>
-                                <input type="number" value={width} onChange={e => setWidth(+e.target.value || 0)} />
-                                <label style={{fontSize: '13px', display: 'block', marginBottom: '5px'}}>Длина</label>
-                                <input type="number" value={length} onChange={e => setLength(+e.target.value || 0)} />
+                                <h2>Форма террасы</h2>
+                                <button 
+                                    className={`button button-outline ${shapeType === 'rectangle' ? 'active' : ''}`}
+                                    onClick={() => setShapeType('rectangle')}
+                                >
+                                    Прямоугольная
+                                </button>
+                                <button 
+                                    className={`button button-outline ${shapeType === 'custom' ? 'active' : ''}`}
+                                    onClick={() => setShapeType('custom')}
+                                >
+                                    Произвольная форма
+                                </button>
                             </div>
+
+                            {shapeType === 'rectangle' ? (
+                                <div className="panel">
+                                    <h2>Размеры (мм)</h2>
+                                    <label style={{fontSize: '13px', display: 'block', marginBottom: '5px'}}>Ширина</label>
+                                    <input type="number" value={width} onChange={e => setWidth(+e.target.value || 0)} />
+                                    <label style={{fontSize: '13px', display: 'block', marginBottom: '5px'}}>Длина</label>
+                                    <input type="number" value={length} onChange={e => setLength(+e.target.value || 0)} />
+                                </div>
+                            ) : (
+                                <div className="panel">
+                                    <h2>Точки многоугольника</h2>
+                                    <div className="help-text">
+                                        Добавьте минимум 3 точки для создания формы. Координаты указываются в миллиметрах.
+                                    </div>
+                                    <div className="point-inputs">
+                                        <input 
+                                            type="number" 
+                                            placeholder="X (мм)" 
+                                            value={newPointX}
+                                            onChange={e => setNewPointX(e.target.value)}
+                                        />
+                                        <input 
+                                            type="number" 
+                                            placeholder="Y (мм)" 
+                                            value={newPointY}
+                                            onChange={e => setNewPointY(e.target.value)}
+                                        />
+                                    </div>
+                                    <button className="button button-primary button-small" onClick={addPoint}>
+                                        Добавить точку
+                                    </button>
+                                    <button className="button button-outline button-small" onClick={clearPoints}>
+                                        Очистить
+                                    </button>
+                                    
+                                    {customPoints.length > 0 && (
+                                        <div className="points-list">
+                                            {customPoints.map((point, index) => (
+                                                <div key={index} className="point-item">
+                                                    <span>Точка {index + 1}: ({point.x}, {point.y})</span>
+                                                    <button onClick={() => removePoint(index)}>Удалить</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="panel">
                                 <h2>Раскладка досок</h2>
@@ -628,23 +936,27 @@
                                             <select className="nested" value={corner.id} onChange={e => setCorner(CORNERS.find(c => c.id === +e.target.value))}>
                                                 {CORNERS.map(c => <option key={c.id} value={c.id}>{c.name} - {c.price} руб</option>)}
                                             </select>
-                                            <div className="nested" style={{fontSize: '13px', marginBottom: '8px'}}>Выберите стороны:</div>
-                                            <div className="corner-grid nested">
-                                                {[
-                                                    {id: 'top', label: 'Верх'},
-                                                    {id: 'bottom', label: 'Низ'},
-                                                    {id: 'left', label: 'Лево'},
-                                                    {id: 'right', label: 'Право'}
-                                                ].map(side => (
-                                                    <button
-                                                        key={side.id}
-                                                        className={`corner-btn ${cornerSides.includes(side.id) ? 'active' : ''}`}
-                                                        onClick={() => toggleCorner(side.id)}
-                                                    >
-                                                        {side.label}
-                                                    </button>
-                                                ))}
-                                            </div>
+                                            {shapeType === 'rectangle' && (
+                                                <>
+                                                    <div className="nested" style={{fontSize: '13px', marginBottom: '8px'}}>Выберите стороны:</div>
+                                                    <div className="corner-grid nested">
+                                                        {[
+                                                            {id: 'top', label: 'Верх'},
+                                                            {id: 'bottom', label: 'Низ'},
+                                                            {id: 'left', label: 'Лево'},
+                                                            {id: 'right', label: 'Право'}
+                                                        ].map(side => (
+                                                            <button
+                                                                key={side.id}
+                                                                className={`corner-btn ${cornerSides.includes(side.id) ? 'active' : ''}`}
+                                                                onClick={() => toggleCorner(side.id)}
+                                                            >
+                                                                {side.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            )}
                                         </>
                                     )}
                                 </div>
@@ -689,7 +1001,7 @@
                                 <h2>Итоговый расчет</h2>
                                 <div className="info-row">
                                     <span>Площадь террасы:</span>
-                                    <strong>{results.area.toFixed(2)} м²</strong>
+                                    <strong>{results.area} м²</strong>
                                 </div>
                                 <div className="info-row">
                                     <span>Террасная доска:</span>
@@ -697,13 +1009,13 @@
                                 </div>
                                 {useLags && (
                                     <div className="info-row">
-                                        <span>Лаги:</span>
+                                        <span>Лаги ({results.lagsCount} линий):</span>
                                         <strong>{results.totalLags} шт</strong>
                                     </div>
                                 )}
                                 {useKlaymers && (
                                     <div className="info-row">
-                                        <span>Кляймеры:</span>
+                                        <span>Кляймеры ({results.totalBoards}×{results.lagsCount}):</span>
                                         <strong>{results.klaymers} шт</strong>
                                     </div>
                                 )}
@@ -770,6 +1082,10 @@
                         <div className="legend-item">
                             <div style={{width: '30px', height: '5px', background: '#10b981'}}></div>
                             <span>Уголки</span>
+                        </div>
+                        <div className="legend-item">
+                            <div style={{width: '14px', height: '14px', background: '#2563eb', borderRadius: '50%'}}></div>
+                            <span>Точки формы</span>
                         </div>
                     </div>
                 </div>
